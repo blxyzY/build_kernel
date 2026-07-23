@@ -29,10 +29,6 @@ on:
           - aosp-clang-22
           - aosp-clang-21
           - aosp-clang-20
-      KBUILD_USER:
-        description: 'Kbuild user'
-        default: 'xlvy'
-        required: true
       BRANCH:
         description: 'Kernel branch'
         default: ''
