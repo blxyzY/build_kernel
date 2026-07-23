@@ -187,8 +187,8 @@ build_kernel() {
     pr_step "Starting kernel build..."
     
     export ARCH=arm64 LLVM=1 LLVM_IAS=1
-    export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-xlvy}"
-    export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-xlvy_lab}"
+    export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-vlzdrt}"
+    export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-Xlvpnkpjrk_lab}"
     
     mkdir -p out
     
