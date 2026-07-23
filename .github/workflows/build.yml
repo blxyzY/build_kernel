@@ -214,25 +214,12 @@ jobs:
         MD5: \`${MD5_CHECK}\`
         Compiler: ${CLANG_CLEAN}"
 
-        RESPONSE=$(curl -s -F document=@"$ZIP_FILE" \
+        curl -s -F document=@"$ZIP_FILE" \
           -F chat_id="${CHAT_ID}" \
           -F caption="$(echo -e "$MESSAGE")" \
           -F parse_mode="Markdown" \
-          "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument")
+          "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
         
         echo "Upload completed!"
-        
-        MESSAGE_ID=$(echo "$RESPONSE" | grep -o '"message_id":[0-9]*' | head -1 | cut -d: -f2)
-        
-        if [ -n "$MESSAGE_ID" ]; then
-          echo "Message ID: $MESSAGE_ID"
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/pinChatMessage" \
-            -d chat_id="${CHAT_ID}" \
-            -d message_id="${MESSAGE_ID}" \
-            -d disable_notification="true"
-          echo "Message pinned!"
-        else
-          echo "Failed to get message ID"
-        fi
       working-directory: kernel
       
