@@ -1,4 +1,4 @@
-tetap pakai yang seperti ini #!/usr/bin/env bash
+#!/usr/bin/env bash
 
 set -e
 
