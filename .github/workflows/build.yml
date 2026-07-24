@@ -78,9 +78,11 @@ jobs:
         
     - name: Install dependencies
       run: |
+        echo "::group::Installing dependencies"
         sudo apt update -y
         sudo apt install -y bc cpio flex bison git python-is-python3 \
           libc6-dev tar perl curl lz4 wget zip unzip build-essential libssl-dev
+        echo "::endgroup::"
           
     - name: Prepare timezone
       run: |
@@ -89,9 +91,9 @@ jobs:
         
     - name: Prepare Build Kernel
       run: |
+        echo "::group::Preparing build environment"
         cp ../builder/build.sh .
         chmod +x build.sh
-
         if [ -d "../builder/AnyKernel3" ]; then
           echo "Copying AnyKernel3 from builder repository..."
           cp -r ../builder/AnyKernel3 .
@@ -100,16 +102,33 @@ jobs:
           echo "ERROR: AnyKernel3 not found in builder repository!"
           exit 1
         fi
-
         echo "Contents of AnyKernel3:"
         ls -la AnyKernel3/
+        echo "::endgroup::"
       working-directory: kernel
         
     - name: Build kernel
       id: build
       run: |
+        # Aktifkan verbose untuk semua perintah
+        set -x
+
         BUILD_START=$(date +%s)
-        
+
+        # Tampilkan konfigurasi
+        echo "=========================================="
+        echo "KERNEL BUILD CONFIGURATION"
+        echo "------------------------------------------"
+        echo "Device          : A235F"
+        echo "Defconfig       : ${{ github.event.inputs.DEFCONFIG }}"
+        echo "LTO             : ${{ github.event.inputs.LTO }}"
+        echo "Clang version   : ${{ github.event.inputs.CLANG_VERSION }}"
+        echo "KernelSU        : ${{ github.event.inputs.SETUP_KSU }}"
+        echo "KSU branch      : ${{ github.event.inputs.KSU_BRANCH }}"
+        echo "SELinux         : ${{ github.event.inputs.SELINUX_PERMISSIVE == 'true' && 'Permissive' || 'Enforcing' }}"
+        echo "KCFLAGS=-w      : ${{ github.event.inputs.KCFLAGS_W }}"
+        echo "=========================================="
+
         export KBUILD_BUILD_USER="${{ github.event.inputs.KBUILD_USER }}"
         export KBUILD_BUILD_HOST="xlvy_10"
         export IS_CI=true
@@ -136,8 +155,20 @@ jobs:
         if [[ "${{ github.event.inputs.KCFLAGS_W }}" = "true" ]]; then
           export KCFLAGS="-w"
         fi
-        
+
+        # Aktifkan output make yang detail
+        export KBUILD_VERBOSE=1
+        export V=1
+
+        echo "Starting build with:"
+        echo "./build.sh kernel -j $(nproc) ${{ github.event.inputs.DEFCONFIG }}"
+        echo "------------------------------------------"
+        echo "::group::Build output (full log)"
+
+        # Jalankan build
         ./build.sh kernel -j $(nproc) ${{ github.event.inputs.DEFCONFIG }}
+
+        echo "::endgroup::"
 
         BUILD_END=$(date +%s)
         BUILD_DURATION=$((BUILD_END - BUILD_START))
@@ -145,7 +176,11 @@ jobs:
         
         echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_ENV
         echo "build_date=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+        echo "------------------------------------------"
         echo "Build completed in: $BUILD_TIME"
+        echo "Generated artifacts:"
+        ls -la *.zip 2>/dev/null || echo "No zip file found (maybe build failed or not yet packaged)"
+        echo "=========================================="
       working-directory: kernel
       
     - name: Upload AnyKernel3
@@ -206,14 +241,12 @@ jobs:
         
         MD5_CHECK=$(md5sum "$ZIP_FILE" | cut -d' ' -f1)
         CLANG_CLEAN=$(echo "$CLANG_VER" | cut -d'(' -f1 | sed 's/[[:space:]]*$//')
-
         MESSAGE="${BUILD_TIME_FORMATTED}
         Device: ${DEVICE:-A235F}
         Version: ${KERNEL_VER:-unknown}
         SELinux: ${SELINUX_STATE:-Enforcing}
         MD5: \`${MD5_CHECK}\`
         Compiler: ${CLANG_CLEAN}"
-
         curl -s -F document=@"$ZIP_FILE" \
           -F chat_id="${CHAT_ID}" \
           -F caption="$(echo -e "$MESSAGE")" \
