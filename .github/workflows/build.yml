@@ -8,7 +8,7 @@ on:
         required: true
       DEFCONFIG:
         description: 'Defconfig name'
-        default: ''
+        default: 'a23_eur_open_defconfig'
         required: true
       LTO:
         description: 'Link Time Optimisation'
@@ -22,13 +22,19 @@ on:
       CLANG_VERSION:
         description: 'Clang version'
         required: true
-        default: 'neutron-clang-23'
+        default: 'clang-12'
         type: choice
         options:
+          - clang-12
           - neutron-clang-23
           - aosp-clang-22
           - aosp-clang-21
           - aosp-clang-20
+          - proton-clang-13
+      KBUILD_USER:
+        description: 'Kbuild user'
+        default: 'xlvy'
+        required: true
       BRANCH:
         description: 'Kernel branch'
         default: ''
@@ -39,8 +45,8 @@ on:
         default: false
       KSU_BRANCH:
         description: 'KernelSU branch'
+        required: false
         default: 'main'
-        required: true
       SELINUX_PERMISSIVE:
         description: 'Set SELinux as Permissive'
         type: boolean
@@ -48,7 +54,7 @@ on:
       KCFLAGS_W:
         description: 'Enable KCFLAGS=-w'
         type: boolean
-        default: true
+        default: false
       UPLOAD_TO_TG:
         description: 'Upload to Telegram'
         type: boolean
@@ -73,7 +79,7 @@ jobs:
         path: kernel
         ref: ${{ github.event.inputs.BRANCH }}
         show-progress: false
-        fetch-depth: 10
+        fetch-depth: 1
         repository: ${{ github.event.inputs.REPO_URL }}
         
     - name: Install dependencies
@@ -87,10 +93,11 @@ jobs:
         sudo rm -f /etc/localtime
         sudo ln -s /usr/share/zoneinfo/Asia/Jakarta /etc/localtime
         
-    - name: Prepare Build Kernel
+    - name: Prepare BuildKernel
       run: |
         cp ../builder/build.sh .
         chmod +x build.sh
+        
         if [ -d "../builder/AnyKernel3" ]; then
           echo "Copying AnyKernel3 from builder repository..."
           cp -r ../builder/AnyKernel3 .
@@ -99,6 +106,7 @@ jobs:
           echo "ERROR: AnyKernel3 not found in builder repository!"
           exit 1
         fi
+        
         echo "Contents of AnyKernel3:"
         ls -la AnyKernel3/
       working-directory: kernel
@@ -106,8 +114,6 @@ jobs:
     - name: Build kernel
       id: build
       run: |
-        BUILD_START=$(date +%s)
-        
         export KBUILD_BUILD_USER="${{ github.event.inputs.KBUILD_USER }}"
         export KBUILD_BUILD_HOST="xlvy_10"
         export IS_CI=true
@@ -136,13 +142,8 @@ jobs:
         fi
         
         ./build.sh kernel -j $(nproc) ${{ github.event.inputs.DEFCONFIG }}
-        BUILD_END=$(date +%s)
-        BUILD_DURATION=$((BUILD_END - BUILD_START))
-        BUILD_TIME=$(printf '%02d:%02d:%02d' $((BUILD_DURATION/3600)) $((BUILD_DURATION%3600/60)) $((BUILD_DURATION%60)))
         
-        echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_ENV
         echo "build_date=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
-        echo "Build completed in: $BUILD_TIME"
       working-directory: kernel
       
     - name: Upload AnyKernel3
@@ -151,16 +152,6 @@ jobs:
       with:
         name: AnyKernel3-${{ steps.build.outputs.build_date }}
         path: kernel/*.zip
-        compression-level: 9
-        
-    - name: Upload Build Details
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: BuildDetails-${{ steps.build.outputs.build_date }}
-        path: |
-          kernel/out/build_details.txt
-          kernel/out/build_config.txt
         compression-level: 9
         
     - name: Upload to Telegram
