@@ -158,6 +158,16 @@ setup_ksu() {
     fi
 }
 
+get_ksu_version() {
+    if [ -d "KernelSU" ] && [ "$KERNELSU" = "true" ]; then
+        KSU_REV_COUNT=$(cd KernelSU && git rev-list --count HEAD 2>/dev/null || echo "0")
+        KSU_VERSION=$(expr 10200 + $KSU_REV_COUNT 2>/dev/null || echo "10200")
+        echo "$KSU_VERSION"
+    else
+        echo "0"
+    fi
+}
+
 build_kernel() {
     pr_step "Starting kernel build..."
     
@@ -270,6 +280,9 @@ post_build() {
     GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
     BUILD_DATE=$(date +'%Y%m%d%H%M%S')
     
+    # Get KernelSU version
+    KSU_VERSION=$(get_ksu_version)
+    
     cat > out/build_details.txt << EOF
 Kernel Version: $KERNEL_VER
 Git SHA: $GIT_SHA
@@ -277,6 +290,7 @@ Build Date: $(date)
 Defconfig: $DEFCONFIG
 LTO: ${LTO:-none}
 KernelSU: ${KERNELSU:-false}
+KSU Version: $KSU_VERSION
 KSU Branch: ${KSU_BRANCH:-N/A}
 SELinux: ${SELINUX_STATE:-Enforcing}
 Clang: $(clang --version | head -1)
@@ -285,55 +299,16 @@ EOF
     
     cp out/.config out/build_config.txt
     
-    # Cari AnyKernel3 di beberapa lokasi
-    ANY_KERNEL_DIR=""
-    if [ -d "AnyKernel3" ]; then
-        ANY_KERNEL_DIR="AnyKernel3"
-    elif [ -d "../AnyKernel3" ]; then
-        ANY_KERNEL_DIR="../AnyKernel3"
-    elif [ -d "$HOME/AnyKernel3" ]; then
-        ANY_KERNEL_DIR="$HOME/AnyKernel3"
-    else
+    if [ ! -d "AnyKernel3" ]; then
         pr_err "AnyKernel3 folder not found!"
-        pr_err "Searched in: $(pwd)/AnyKernel3, $(pwd)/../AnyKernel3, $HOME/AnyKernel3"
-        pr_info "Creating temporary AnyKernel3 folder..."
-        
-        # Buat AnyKernel3 sementara
-        mkdir -p AnyKernel3
-        cat > AnyKernel3/anykernel.sh << 'EOF'
-#!/sbin/sh
-
-properties() { '
-kernel.string=Solstice Kernel
-do.devicecheck=0
-do.modules=0
-do.cleanup=1
-do.cleanuponabort=0
-device.name1=a23
-device.name2=a23x
-'; }
-
-block=/dev/block/by-name/boot;
-is_slot_device=0;
-ramdisk_compression=auto;
-
-. tools/ak3-core.sh && split_boot;
-flash_boot;
-write_boot;
-done;
-EOF
-        mkdir -p AnyKernel3/tools
-        touch AnyKernel3/tools/ak3-core.sh
-        chmod +x AnyKernel3/anykernel.sh
-        ANY_KERNEL_DIR="AnyKernel3"
-        pr_info "Created temporary AnyKernel3 folder"
+        exit 1
     fi
     
     pr_step "Creating AnyKernel3 zip..."
     
     if [ -f "out/arch/arm64/boot/Image" ]; then
-        cp out/arch/arm64/boot/Image $ANY_KERNEL_DIR/
-        pr_info "Image copied to $ANY_KERNEL_DIR"
+        cp out/arch/arm64/boot/Image AnyKernel3/
+        pr_info "Image copied to AnyKernel3"
     else
         pr_err "Image not found!"
         return 1
@@ -341,13 +316,13 @@ EOF
     
     if [ "${QCA_IS_MODULE:-false}" = "true" ]; then
         pr_info "Including modules..."
-        if [ -f "$ANY_KERNEL_DIR/anykernel.sh" ]; then
-            sed -i 's/do.modules=.*/do.modules=1/' $ANY_KERNEL_DIR/anykernel.sh
+        if [ -f "AnyKernel3/anykernel.sh" ]; then
+            sed -i 's/do.modules=.*/do.modules=1/' AnyKernel3/anykernel.sh
         fi
-        mkdir -p $ANY_KERNEL_DIR/modules/vendor/lib/modules
+        mkdir -p AnyKernel3/modules/vendor/lib/modules
         if [ -f "out/drivers/staging/qcacld-3.0/wlan.ko" ]; then
             llvm-strip out/drivers/staging/qcacld-3.0/wlan.ko --strip-unneeded 2>/dev/null
-            cp out/drivers/staging/qcacld-3.0/wlan.ko $ANY_KERNEL_DIR/modules/vendor/lib/modules/
+            cp out/drivers/staging/qcacld-3.0/wlan.ko AnyKernel3/modules/vendor/lib/modules/
         fi
     fi
     
@@ -364,13 +339,13 @@ EOF
     gcc -CC utsrelease.c -o getutsrel 2>/dev/null
     if [ -f "./getutsrel" ]; then
         UTSRELEASE=$(./getutsrel)
-        if [ -f "$ANY_KERNEL_DIR/anykernel.sh" ]; then
-            sed -i "s/kernel\.string=.*/kernel.string=$UTSRELEASE/" $ANY_KERNEL_DIR/anykernel.sh
+        if [ -f "AnyKernel3/anykernel.sh" ]; then
+            sed -i "s/kernel\.string=.*/kernel.string=$UTSRELEASE/" AnyKernel3/anykernel.sh
             pr_info "Updated kernel.string to: $UTSRELEASE"
         fi
     fi
     
-    cd $ANY_KERNEL_DIR
+    cd AnyKernel3
     ZIP_NAME="AnyKernel3-${KERNEL_VER}_${GIT_SHA}-${BUILD_DATE}.zip"
     zip -r9 ../$ZIP_NAME * -x .git README.md .gitignore
     cd ..
@@ -379,9 +354,16 @@ EOF
     echo "ZIP_FILE=$(pwd)/$ZIP_NAME"
     echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV 2>/dev/null || true
     
+    # Save all build info to GITHUB_ENV
     echo "KERNEL_VER=$KERNEL_VER" >> $GITHUB_ENV 2>/dev/null || true
     echo "GIT_SHA=$GIT_SHA" >> $GITHUB_ENV 2>/dev/null || true
     echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV 2>/dev/null || true
+    echo "KERNELSU=${KERNELSU:-false}" >> $GITHUB_ENV 2>/dev/null || true
+    echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV 2>/dev/null || true
+    echo "KSU_BRANCH=${KSU_BRANCH:-N/A}" >> $GITHUB_ENV 2>/dev/null || true
+    echo "LTO=${LTO:-none}" >> $GITHUB_ENV 2>/dev/null || true
+    echo "SELINUX_STATE=${SELINUX_STATE:-Enforcing}" >> $GITHUB_ENV 2>/dev/null || true
+    echo "CLANG_VER=$(clang --version | head -1)" >> $GITHUB_ENV 2>/dev/null || true
 }
 
 usage() {
