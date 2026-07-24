@@ -79,7 +79,7 @@ jobs:
         path: kernel
         ref: ${{ github.event.inputs.BRANCH }}
         show-progress: false
-        fetch-depth: 10
+        fetch-depth: 1
         repository: ${{ github.event.inputs.REPO_URL }}
         
     - name: Install dependencies
